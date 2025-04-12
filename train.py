@@ -18,30 +18,29 @@ def build_files(data_path, tokenized_data_path, num_pieces, full_tokenizer, min_
     用于将原始文本数据转换为适合GPT2模型训练的格式
     * data_path: 原始数据路径
     * tokenized_data_path: 分词后的数据存放路径
-    * num_pieces: 将训练语料分成多少份
+    * num_pieces: 将训练语料分成多少份, 如100份, 文章总数为1000, 那么每份就有10个文章
     * full_tokenizer: 分词器
-    * min_length: 最短收录文章长度
+    * min_length: 最短用于训练的文章的长度, 如128, 则长度小于128的文章不参与训练
     """
     with open(data_path, 'r', encoding='utf8') as f:
         print('reading lines')
-        lines = json.load(f)
-        lines = [line.replace('\n', ' [SEP] ') for line in lines]  # 用[SEP]表示换行, 段落之间使用SEP表示段落结束
+        lines = json.load(f)  # 是一个列表
+        lines = [line.replace('\n', ' [SEP] ') for line in lines]  # 用[SEP]表示换行, 段落之间使用SEP表示段落结束, line表示的是一篇文章
     all_len = len(lines)
     if not os.path.exists(tokenized_data_path):
         os.mkdir(tokenized_data_path)
     for i in tqdm(range(num_pieces)):
-        sublines = lines[all_len // num_pieces * i: all_len // num_pieces * (i + 1)]
+        sublines = lines[all_len // num_pieces * i: all_len // num_pieces * (i + 1)]  # 分割成num_pieces份
         if i == num_pieces - 1:
             sublines.extend(lines[all_len // num_pieces * (i + 1):])  # 把尾部例子添加到最后一个piece
-        sublines = [full_tokenizer.tokenize(line) for line in sublines if
-                    len(line) > min_length]  # 只考虑长度超过min_length的句子
-        sublines = [full_tokenizer.convert_tokens_to_ids(line) for line in sublines]
+        sublines = [full_tokenizer.tokenize(line) for line in sublines if len(line) > min_length]  # 进行tokenization, 只考虑长度超过min_length的句子
+        sublines = [full_tokenizer.convert_tokens_to_ids(line) for line in sublines]  #  将token转换为id
         full_line = []
-        for subline in sublines:
+        for subline in sublines:  # 每一个subline都是一篇文章
             full_line.append(full_tokenizer.convert_tokens_to_ids('[MASK]'))  # 文章开头添加MASK表示文章开始
             full_line.extend(subline)
             full_line.append(full_tokenizer.convert_tokens_to_ids('[CLS]'))  # 文章之间添加CLS表示文章结束
-        with open(tokenized_data_path + 'tokenized_train_{}.txt'.format(i), 'w') as f:
+        with open(tokenized_data_path + 'tokenized_train_{}.txt'.format(i), 'w') as f:  # 每组文章写入一个文件
             for id in full_line:
                 f.write(str(id) + ' ')
     print('finish')
@@ -87,7 +86,7 @@ def main():
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.device  # 此处设置程序使用哪些显卡
 
-    model_config = transformers.GPT2Config.from_json_file(args.model_config)  # 加载模型配置
+    model_config = transformers.modeling_gpt2.GPT2Config.from_json_file(args.model_config)  # 加载模型配置
     print('config:\n' + model_config.to_json_string())
 
     n_ctx = model_config.n_ctx  # 训练时的上下文长度. 即模型一次可以处理的最大token数量
@@ -127,13 +126,14 @@ def main():
     * lr: 学习率
     * warmup_steps: warm up步数
     * log_step: 多少步汇报一次loss
-    * stride: 训练时取训练数据的窗口步长. 假设模型的输入窗口长度为 1024 tokens, stride 设置为 512, 则每次新窗口的起始位置相对于上一个窗口向前移动 512 tokens, 从而使得窗口之间存在 50% 的重叠
+    * n_ctx: 训练时的上下文长度(窗口长度)
+    * stride: 窗口之间的间隔. 假设模型的输入窗口长度为 1024 tokens, stride 设置为 512, 则每次新窗口的起始位置相对于上一个窗口向前移动 512 tokens, 从而使得窗口之间存在 50% 的重叠
     * gradient_accumulation: 梯度积累, 将训练数据分成多个 mini-batch, 每个 mini-batch 分别进行前向计算和梯度反向传播, 但不立即更新模型参数, 将每个 mini-batch 计算出的梯度累加起来, 直到累计达到一定次数(由 gradient_accumulation 参数指定), 再一次性更新模型权重
     * fp16: 混合精度
     * fp16_opt_level: 混合精度优化级别
     * max_grad_norm: 梯度裁剪
-    * num_pieces: 将训练语料分成多少份
-    * min_length: 最短收录文章长度
+    * num_pieces: 将训练语料分成多少份, 如100份, 文章总数为1000, 那么每份就有10个文章
+    * min_length: 最短用于训练的文章的长度, 如128, 则长度小于128的文章不参与训练
     * output_dir: 模型输出路径
     * tb_writer: Tensorboard路径
     """
@@ -154,14 +154,14 @@ def main():
     model.train()
     model.to(device)
 
-    num_parameters = 0
+    num_parameters = 0  # 模型参数数量
     parameters = model.parameters()
     for parameter in parameters:
         num_parameters += parameter.numel()
     print('number of parameters: {}'.format(num_parameters))
 
-    multi_gpu = False
-    full_len = 0
+    multi_gpu = False  # 是否使用多GPU训练
+    full_len = 0  # 统计token id的总数量
     print('calculating total steps')
     for i in tqdm(range(num_pieces)):
         with open(tokenized_data_path + 'tokenized_train_{}.txt'.format(i), 'r') as f:
@@ -177,11 +177,11 @@ def main():
             from apex import amp
         except ImportError:
             raise ImportError("Please install apex from https://www.github.com/nvidia/apex to use fp16 training.")
-        model, optimizer = amp.initialize(model, optimizer, opt_level=fp16_opt_level)
+        model, optimizer = amp.initialize(model, optimizer, opt_level=fp16_opt_level)  # 混合精度训练
 
     if torch.cuda.device_count() > 1:
         print("Let's use", torch.cuda.device_count(), "GPUs!")
-        model = DataParallel(model, device_ids=[int(i) for i in args.device.split(',')])
+        model = DataParallel(model, device_ids=[int(i) for i in args.device.split(',')])  # 将模型wrap一下用于多GPU训练
         multi_gpu = True
     print('starting training')
     overall_step = 0
@@ -190,50 +190,50 @@ def main():
         print('epoch {}'.format(epoch + 1))
         now = datetime.now()
         print('time: {}'.format(now))
-        x = np.linspace(0, num_pieces - 1, num_pieces, dtype=np.int32)
-        random.shuffle(x)
-        piece_num = 0
+        x = np.linspace(0, num_pieces - 1, num_pieces, dtype=np.int32)  # x表示的是第x组文章
+        random.shuffle(x)  # 随机打乱文章组的顺序
+        piece_num = 0  # 表示当前训练到第几组文章
         for i in x:
             with open(tokenized_data_path + 'tokenized_train_{}.txt'.format(i), 'r') as f:
                 line = f.read().strip()
             tokens = line.split()
-            tokens = [int(token) for token in tokens]
-            start_point = 0
-            samples = []
-            while start_point < len(tokens) - n_ctx:
-                samples.append(tokens[start_point: start_point + n_ctx])
-                start_point += stride
-            if start_point < len(tokens):
+            tokens = [int(token) for token in tokens]  # 这组文章所有tokens
+            start_point = 0  # 表示当前窗口的起始token
+            samples = []  # 存储当前组文章的所有窗口
+            while start_point < len(tokens) - n_ctx:  # 窗口的起始token小于这组文章所有tokens的长度减去窗口长度
+                samples.append(tokens[start_point: start_point + n_ctx])  # 将当前窗口的tokens添加到samples中
+                start_point += stride  # 移动窗口
+            if start_point < len(tokens):  # 补足最后一个窗口, 大小不够n_ctx的窗口
                 samples.append(tokens[len(tokens)-n_ctx:])
-            random.shuffle(samples)
-            for step in range(len(samples) // batch_size):  # drop last
+            random.shuffle(samples)  # 随机打乱窗口顺序
+            for step in range(len(samples) // batch_size):  # 最后一个窗口丢弃
 
                 #  prepare data
-                batch = samples[step * batch_size: (step + 1) * batch_size]
-                batch_inputs = []
+                batch = samples[step * batch_size: (step + 1) * batch_size]  # 取出当前batch
+                batch_inputs = []  # 存储当前batch的tokens
                 for ids in batch:
                     int_ids = [int(x) for x in ids]
-                    batch_inputs.append(int_ids)
-                batch_inputs = torch.tensor(batch_inputs).long().to(device)
+                    batch_inputs.append(int_ids)  # 将当前batch的tokens添加到batch_inputs中
+                batch_inputs = torch.tensor(batch_inputs).long().to(device)  # 将batch_inputs转换为tensor并转移到GPU上
 
                 #  forward pass
-                outputs = model.forward(input_ids=batch_inputs, labels=batch_inputs)
-                loss, logits = outputs[:2]
+                outputs = model.forward(input_ids=batch_inputs, labels=batch_inputs)  # 正向传播, GT是当前batch的tokens
+                loss, logits = outputs[:2]  # logits是每个位置上所有词汇的预测分数(未经过softmax), loss是当前batch的损失
 
                 #  get loss
                 if multi_gpu:
-                    loss = loss.mean()
+                    loss = loss.mean()  # 多GPU训练时, loss需要取平均
                 if gradient_accumulation > 1:
-                    loss = loss / gradient_accumulation
+                    loss = loss / gradient_accumulation  # 如果不对损失值进行归一化, 那么每次更新模型参数时, 梯度会变得非常大, 导致模型不收敛
 
                 #  loss backward
                 if fp16:
-                    with amp.scale_loss(loss, optimizer) as scaled_loss:
+                    with amp.scale_loss(loss, optimizer) as scaled_loss:  # 缩放的目的是为了避免 fp16 数值范围较小可能导致的下溢(underflow)问题. 简单来说它能表达的最小非零整数比FP32要大很多, 当计算得到的梯度非常小的时候, 它们可能会被四舍五入为0, 这就是所谓的下溢现象, 导致训练停滞或收敛速度变慢. Loss Scaling的核心思想是, 在反向传播之前将损失乘以一个较大的标量, 使得计算得到的梯度数值成比例地放大, 从而进入FP16的数值范围. 这一步骤在双精度训练中非常重要.
                         scaled_loss.backward()
-                        torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), max_grad_norm)
+                        torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), max_grad_norm)  # amp.master_params(optimizer) 获取的是以 32 位浮点形式存储的"主参数", 因为在混合精度训练中一般保留一份 32 位精度的模型参数以保证数值稳定, 防止一直用FP16产生的精度损失.
                 else:
-                    loss.backward()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
+                    loss.backward()  # 反向传播
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)  # 进行梯度裁剪, 防止梯度爆炸
 
                 #  optimizer step
                 if (overall_step + 1) % gradient_accumulation == 0:

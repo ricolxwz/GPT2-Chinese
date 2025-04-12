@@ -18,11 +18,13 @@
                 "--raw_data_path=data/train.json",
                 "--epochs=30",
                 "--log_step=200",
-                "--stride=512",
+                "--stride=5",
                 "--output_dir=model/",
                 "--device=0",
                 "--num_pieces=100",
-                "--raw"
+                "--raw",
+                "--min_length=3",
+                "--fp16"
             ]
         }
     ]
