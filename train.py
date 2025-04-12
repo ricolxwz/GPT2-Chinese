@@ -228,19 +228,26 @@ def main():
 
                 #  loss backward
                 if fp16:
-                    with amp.scale_loss(loss, optimizer) as scaled_loss:  # 缩放的目的是为了避免 fp16 数值范围较小可能导致的下溢(underflow)问题. 简单来说它能表达的最小非零整数比FP32要大很多, 当计算得到的梯度非常小的时候, 它们可能会被四舍五入为0, 这就是所谓的下溢现象, 导致训练停滞或收敛速度变慢. Loss Scaling的核心思想是, 在反向传播之前将损失乘以一个较大的标量, 使得计算得到的梯度数值成比例地放大, 从而进入FP16的数值范围. 这一步骤在双精度训练中非常重要.
+                    with amp.scale_loss(loss, optimizer) as scaled_loss:  # 缩放的目的是为了避免 fp16 数值范围较小可能导致的下溢(underflow)问题. 简单来说它能表达的最小非零整数比FP32要大很多, 当计算得到的梯度非常小的时候, 它们可能会被四舍五入为0, 这就是所谓的下溢现象, 导致训练停滞或收敛速度变慢. Loss Scaling的核心思想是, 在反向传播之前将损失乘以一个较大的标量, 使得计算得到的梯度数值成比例地放大, 从而进入FP16的数值范围. 这一步骤在混合精度训练中非常重要.
                         scaled_loss.backward()
-                        torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), max_grad_norm)  # amp.master_params(optimizer) 获取的是以 32 位浮点形式存储的"主参数", 因为在混合精度训练中一般保留一份 32 位精度的模型参数以保证数值稳定, 防止一直用FP16产生的精度损失.
+                        torch.nn.utils.clip_grad_norm_(amp.master_params(optimizer), max_grad_norm)  # amp.master_params(optimizer) 获取的是以 32 位浮点形式存储的模型参数
+                        """
+                        混合精度训练的步骤如下(以apex为例):
+                        1. 前向传播: FP32参数会被cast为FP16执行计算
+                        2. 反向传播: 计算得到的梯度在FP16下可能很小, 会进行梯度缩放以避免下溢
+                        3. 反向传播得到的梯度经过梯度反缩放, 更新模型FP32参数
+                        4. 更新后的FP32模型参数会被cast为FP16, 以便于下一次前向传播
+                        """
                 else:
                     loss.backward()  # 反向传播
                     torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)  # 进行梯度裁剪, 防止梯度爆炸
 
                 #  optimizer step
-                if (overall_step + 1) % gradient_accumulation == 0:
-                    running_loss += loss.item()
-                    optimizer.step()
-                    optimizer.zero_grad()
-                    scheduler.step()
+                if (overall_step + 1) % gradient_accumulation == 0:  # 如果当前batch是gradient accumulation的整数倍, 则更新模型参数
+                    running_loss += loss.item()  # 累加loss
+                    optimizer.step()  # 更新模型参数
+                    optimizer.zero_grad()  # 清空梯度
+                    scheduler.step()  # 更新学习率
                 if (overall_step + 1) % log_step == 0:
                     tb_writer.add_scalar('loss', loss.item() * gradient_accumulation, overall_step)
                     print('now time: {}:{}. Step {} of piece {} of epoch {}, loss {}'.format(
@@ -251,13 +258,13 @@ def main():
                         epoch + 1,
                         running_loss * gradient_accumulation / (log_step / gradient_accumulation)))
                     running_loss = 0
-                overall_step += 1
-            piece_num += 1
+                overall_step += 1  # 已经训练的batch的个数
+            piece_num += 1  # 训练到第几组文章
 
         print('saving model for epoch {}'.format(epoch + 1))
         if not os.path.exists(output_dir + 'model_epoch{}'.format(epoch + 1)):
             os.mkdir(output_dir + 'model_epoch{}'.format(epoch + 1))
-        model_to_save = model.module if hasattr(model, 'module') else model
+        model_to_save = model.module if hasattr(model, 'module') else model  # 如果使用了多GPU训练, 需要去掉外层的包装
         model_to_save.save_pretrained(output_dir + 'model_epoch{}'.format(epoch + 1))
         # torch.save(scheduler.state_dict(), output_dir + 'model_epoch{}/scheduler.pt'.format(epoch + 1))
         # torch.save(optimizer.state_dict(), output_dir + 'model_epoch{}/optimizer.pt'.format(epoch + 1))

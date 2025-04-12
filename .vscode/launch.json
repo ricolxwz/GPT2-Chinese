@@ -16,7 +16,7 @@
                 "--tokenized_data_path=data/tokenized/",
                 "--tokenizer_path=cache/vocab_small.txt",
                 "--raw_data_path=data/train.json",
-                "--epochs=30",
+                "--epochs=2",
                 "--log_step=200",
                 "--stride=5",
                 "--output_dir=model/",
@@ -24,7 +24,7 @@
                 "--num_pieces=100",
                 "--raw",
                 "--min_length=3",
-                "--fp16"
+                // "--fp16"
             ]
         }
     ]
