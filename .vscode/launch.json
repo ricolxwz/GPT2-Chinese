@@ -1,0 +1,29 @@
+{
+    // 使用 IntelliSense 了解相关属性。
+    // 悬停以查看现有属性的描述。
+    // 欲了解更多信息，请访问: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "训练GPT2",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/train.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": [
+                "--model_config=config/model_config_small.json",
+                "--tokenized_data_path=data/tokenized/",
+                "--tokenizer_path=cache/vocab_small.txt",
+                "--raw_data_path=data/train.json",
+                "--epochs=30",
+                "--log_step=200",
+                "--stride=512",
+                "--output_dir=model/",
+                "--device=0",
+                "--num_pieces=100",
+                "--raw"
+            ]
+        }
+    ]
+}

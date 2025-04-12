@@ -11,8 +11,17 @@ from tqdm import tqdm
 from torch.nn import DataParallel
 from tokenizations.bpe_tokenizer import get_encoder
 
+GPT2_BASE_DIR=str(os.getenv('GPT2_BASE_DIR'))
 
 def build_files(data_path, tokenized_data_path, num_pieces, full_tokenizer, min_length):
+    """
+    用于将原始文本数据转换为适合GPT2模型训练的格式
+    * data_path: 原始数据路径
+    * tokenized_data_path: 分词后的数据存放路径
+    * num_pieces: 将训练语料分成多少份
+    * full_tokenizer: 分词器
+    * min_length: 最短收录文章长度
+    """
     with open(data_path, 'r', encoding='utf8') as f:
         print('reading lines')
         lines = json.load(f)
@@ -52,7 +61,7 @@ def main():
     parser.add_argument('--batch_size', default=8, type=int, required=False, help='训练batch size')
     parser.add_argument('--lr', default=1.5e-4, type=float, required=False, help='学习率')
     parser.add_argument('--warmup_steps', default=2000, type=int, required=False, help='warm up步数')
-    parser.add_argument('--log_step', default=1, type=int, required=False, help='多少步汇报一次loss，设置为gradient accumulation的整数倍')
+    parser.add_argument('--log_step', default=1, type=int, required=False, help='多少步汇报一次loss, 设置为gradient accumulation的整数倍')
     parser.add_argument('--stride', default=768, type=int, required=False, help='训练时取训练数据的窗口步长')
     parser.add_argument('--gradient_accumulation', default=1, type=int, required=False, help='梯度积累')
     parser.add_argument('--fp16', action='store_true', help='混合精度')
@@ -72,21 +81,21 @@ def main():
     print('args:\n' + args.__repr__())
 
     if args.segment:
-        from tokenizations import tokenization_bert_word_level as tokenization_bert
+        from tokenizations import tokenization_bert_word_level as tokenization_bert  # 以词为单位的分词方式, 如"我喜欢编程"会被分成"我", "喜欢", "编程"
     else:
-        from tokenizations import tokenization_bert
+        from tokenizations import tokenization_bert  # 以字符为代为的分词方式, 如"我喜欢编程"会被分成"我", "喜", "欢", "编", "程"
 
     os.environ["CUDA_VISIBLE_DEVICES"] = args.device  # 此处设置程序使用哪些显卡
 
-    model_config = transformers.modeling_gpt2.GPT2Config.from_json_file(args.model_config)
+    model_config = transformers.GPT2Config.from_json_file(args.model_config)  # 加载模型配置
     print('config:\n' + model_config.to_json_string())
 
-    n_ctx = model_config.n_ctx
+    n_ctx = model_config.n_ctx  # 训练时的上下文长度. 即模型一次可以处理的最大token数量
     if args.bpe_token:
         full_tokenizer = get_encoder(args.encoder_json, args.vocab_bpe)
     else:
         full_tokenizer = tokenization_bert.BertTokenizer(vocab_file=args.tokenizer_path)
-    full_tokenizer.max_len = 999999
+    full_tokenizer.max_len = 999999  # 表示将分词器的最大长度设置为999999, 确保分词器在处理长文本的时候不会因为长度限制而截断
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print('using device:', device)
 
@@ -108,6 +117,26 @@ def main():
     output_dir = args.output_dir
     tb_writer = SummaryWriter(log_dir=args.writer_dir)
     assert log_step % gradient_accumulation == 0
+
+    """
+    * raw_data_path: 原始数据路径
+    * tokenized_data_path: 分词后的数据存放路径
+    * raw: 是否从零开始构建适配GPT2格式的数据集
+    * epochs: 训练轮数
+    * batch_size: 训练batch size
+    * lr: 学习率
+    * warmup_steps: warm up步数
+    * log_step: 多少步汇报一次loss
+    * stride: 训练时取训练数据的窗口步长. 假设模型的输入窗口长度为 1024 tokens, stride 设置为 512, 则每次新窗口的起始位置相对于上一个窗口向前移动 512 tokens, 从而使得窗口之间存在 50% 的重叠
+    * gradient_accumulation: 梯度积累, 将训练数据分成多个 mini-batch, 每个 mini-batch 分别进行前向计算和梯度反向传播, 但不立即更新模型参数, 将每个 mini-batch 计算出的梯度累加起来, 直到累计达到一定次数(由 gradient_accumulation 参数指定), 再一次性更新模型权重
+    * fp16: 混合精度
+    * fp16_opt_level: 混合精度优化级别
+    * max_grad_norm: 梯度裁剪
+    * num_pieces: 将训练语料分成多少份
+    * min_length: 最短收录文章长度
+    * output_dir: 模型输出路径
+    * tb_writer: Tensorboard路径
+    """
 
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
