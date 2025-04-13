@@ -110,7 +110,7 @@ def fast_sample_sequence(model, context, length, temperature=1.0, top_k=30, top_
     return generate
 
 
-# 通过命令行参数--fast_pattern，指定模式
+# 通过命令行参数--fast_pattern, 指定模式
 def generate(n_ctx, model, context, length, tokenizer, temperature=1, top_k=0, top_p=0.0, repitition_penalty=1.0, device='cpu',
              is_fast_pattern=False):
     if is_fast_pattern:
@@ -158,6 +158,15 @@ def main():
     topk = args.topk
     topp = args.topp
     repetition_penalty = args.repetition_penalty
+    """
+    * length: 生成文本的长度, 即生成多少个 token 作为输出.
+    * batch_size: 每次生成或训练时所使用的批量大小, 表示一次生成多少个样本或一次处理多少个样本.
+    * nsamples: 需要生成的样本总数, 程序会根据批量大小分批生成, 总数达到 nsamples 后结束.
+    * temperature: 控制生成时采样随机性的温度参数. 较低的温度(如 0.7)会使生成更加确定(重复率较高), 而较高的温度(如 1.0 以上)会增加采样的随机性, 从而提高输出的多样性.
+    * topk: top-k 采样策略中的 k 值, 即在生成每个 token 时, 只从概率最高的 k 个候选 token 中选择, 从而限制候选范围, 提高文本质量.
+    * topp: nucleus sampling(顶核采样)策略中的 p 值, 即保留累计概率达到 p 的最小候选集合后, 从中采样下一个 token, 这种方法在动态调整候选 token 数量上比 top-k 更灵活.
+    * repetition_penalty: 重复惩罚因子, 用于降低已生成 token 重复出现的概率, 确保生成的文本更加多样化.
+    """
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
 

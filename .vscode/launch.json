@@ -26,6 +26,22 @@
                 "--min_length=3",
                 // "--fp16"
             ]
+        },
+        {
+            "name": "生成文本",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/generate.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "args": [
+                "--length=50",
+                "--nsamples=4",
+                "--prefix=xxx",
+                "--fast_pattern",
+                "--save_samples",
+                "--save_samples_path=output/"
+            ]
         }
     ]
 }
