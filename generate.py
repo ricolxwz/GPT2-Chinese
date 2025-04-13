@@ -90,30 +90,42 @@ def sample_sequence(model, context, length, n_ctx, tokenizer, temperature=1.0, t
 
 
 def fast_sample_sequence(model, context, length, temperature=1.0, top_k=30, top_p=0.0, device='cpu'):
-    inputs = torch.LongTensor(context).view(1, -1).to(device)
+    """推理, 快速生成文本
+
+    步骤:
+    1. 首先使用past存储了除了最后一个token外的所有token的编码状态
+    2. 然后将最后一个token单独保存在prev中
+    3. 在生成循环的时候, 模型使用prev和past来预测下一个token
+    4. 预测出的新token会成为新的prev
+
+    参数:
+    * context: 如[8790, 139, 156, 12642, 8179]
+    * length: 生成文本的长度
+    """
+    inputs = torch.LongTensor(context).view(1, -1).to(device)  # 将向量变为列向量
     if len(context) > 1:
-        _, past = model(inputs[:, :-1], None)[:2]
+        _, past = model(inputs[:, :-1], None)[:2]  # inputs[:, :-1]是将inputs中除了最后一个token之外的tokens作为模型的输入; _表示的是logits, past表示的是模型的隐藏状态. 注意, 这和训练的时候返回的参数是不一样的. past在这里是一个包含10个元素的tuple, 表示10个隐藏层的状态. 这个状态就是之前的上下文信息.
         prev = inputs[:, -1].view(1, -1)
     else:
         past = None
         prev = inputs
-    generate = [] + context
+    generate = [] + context  # 当前的文本tokens
     with torch.no_grad():
         for i in trange(length):
-            output = model(prev, past=past)
-            output, past = output[:2]
-            output = output[-1].squeeze(0) / temperature
-            filtered_logits = top_k_top_p_filtering(output, top_k=top_k, top_p=top_p)
-            next_token = torch.multinomial(torch.softmax(filtered_logits, dim=-1), num_samples=1)
-            generate.append(next_token.item())
-            prev = next_token.view(1, 1)
+            output = model(prev, past=past)  # 模型的输出是一个tuple, 其中第一个元素是logits, 第二个元素是当前的past(隐藏层状态)
+            output, past = output[:2]  # 取出logits和past
+            output = output[-1].squeeze(0) / temperature  # 将logits除以温度, 使得生成的文本更加随机
+            filtered_logits = top_k_top_p_filtering(output, top_k=top_k, top_p=top_p)  # 过滤logits, 只保留top_k和top_p的token
+            next_token = torch.multinomial(torch.softmax(filtered_logits, dim=-1), num_samples=1)  # 对filtered_logits进行softmax操作, 将logits转换为概率分布, 然后从得到的概率分布中进行采样, 采样的过程基于概率分布的随机选择, 概率越高的词被选中的可能性越大.
+            generate.append(next_token.item())  # 更新当前的文本tokens
+            prev = next_token.view(1, 1)  # 预测出的新token成为新的prev
     return generate
 
 
 # 通过命令行参数--fast_pattern, 指定模式
 def generate(n_ctx, model, context, length, tokenizer, temperature=1, top_k=0, top_p=0.0, repitition_penalty=1.0, device='cpu',
              is_fast_pattern=False):
-    if is_fast_pattern:
+    if is_fast_pattern:  # 使用更快的方式产生文本
         return fast_sample_sequence(model, context, length, temperature=temperature, top_k=top_k, top_p=top_p,
                                     device=device)
     else:
@@ -184,11 +196,11 @@ def main():
             os.makedirs(args.save_samples_path)
         samples_file = open(args.save_samples_path + '/samples.txt', 'w', encoding='utf8')
     while True:
-        raw_text = args.prefix
-        context_tokens = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(raw_text))
-        generated = 0
+        raw_text = args.prefix  # 输入的prompt
+        context_tokens = tokenizer.convert_tokens_to_ids(tokenizer.tokenize(raw_text))  # 将prompt转为token id
+        generated = 0  # 表示当前的批次
         for _ in range(nsamples // batch_size):
-            out = generate(
+            out = generate(  # 推理
                 n_ctx=n_ctx,
                 model=model,
                 context=context_tokens,

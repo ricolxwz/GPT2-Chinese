@@ -37,7 +37,7 @@
             "args": [
                 "--length=50",
                 "--nsamples=4",
-                "--prefix=xxx",
+                "--prefix=xxx\\nyyy",
                 "--fast_pattern",
                 "--save_samples",
                 "--save_samples_path=output/"
