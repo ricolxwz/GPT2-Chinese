@@ -5,6 +5,7 @@ echo "export GPT2_BASE_DIR=/root/GPT2-Chinese" >> /root/.bashrc
 echo "export CUDA_VISIBLE_DEVICES='0'" >> /root/.bashrc
 source /root/.bashrc
 
+
 # 安装依赖
 conda create --name gpt2 python=3.12 -y
 conda activate gpt2
