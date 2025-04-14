@@ -1,13 +1,23 @@
 # 环境配置
-echo "export PATH="/usr/local/cuda/bin:\$PATH"" >> /root/.bashrc
-echo "export LD_LIBRARY_PATH="/usr/local/cuda/lib64:\$LD_LIBRARY_PATH"" >> /root/.bashrc
-echo "export GPT2_BASE_DIR=/root/GPT2-Chinese" >> /root/.bashrc
-echo "export CUDA_VISIBLE_DEVICES='0'" >> /root/.bashrc
-source /root/.bashrc
-
+NAME=gpt2
+GPT2_BASE_DIR=${HOME}/GPT2-Chinese
+GPT2_RESOURCE_DIR=${GPT2_BASE_DIR}/resource
+source ${HOME}/.bashrc
 
 # 安装依赖
 conda create --name gpt2 python=3.12 -y
 conda activate gpt2
 pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1
 pip install -r requirements.txt
+
+# 下载模型
+# MODEL_NAME=models--wenzexu--${NAME}
+# REFS=$(cat ${HOME}/.cache/huggingface/hub/${MODEL_NAME}/refs/main)
+# HF_SNAPSHOT_DIR=${HOME}/.cache/huggingface/hub/${MODEL_NAME}/snapshots/${REFS}
+# huggingface-cli download wenzexu/gpt2
+git clone https://huggingface.co/wenzexu/gpt2 ${MODEL_RESOURCE_DIR}/${NAME}
+
+# 连接文件夹
+mkdir -p ${GPT2_RESOURCE_DIR}
+ln -s ${MODEL_RESOURCE_DIR}/${NAME}  ${GPT2_RESOURCE_DIR}/model
+# ln -s ${DATASET_RESOURCE_DIR}/${NAME} ${GPT2_RESOURCE_DIR}/dataset
